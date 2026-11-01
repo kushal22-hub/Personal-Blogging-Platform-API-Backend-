@@ -6,6 +6,13 @@ import jwt from "jsonwebtoken"
 import { Session } from "../models/session.model.js";
 import { randomBytes, createHash } from "node:crypto";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import {
+  generateRefreshToken,
+  hashToken,
+  refreshCookieOptions,
+} from "../utils/token.utils.js";
+
+
 
  const registerUser = async (req, res, next) => {
   try {
@@ -69,11 +76,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
   }
 };
 
-const hashToken = (token) =>
-  createHash("sha256").update(token).digest("hex");
 
-
-export const loginUser = async (req, res, next) => {
+ const loginUser = async (req, res, next) => {
   try {
     const { email, password } = req.body ?? {};
 
@@ -174,9 +178,156 @@ export const loginUser = async (req, res, next) => {
 };
 
 
+const getRefreshDays = () => {
+  const days = Number(process.env.REFRESH_TOKEN_DAYS || 7);
 
+  if (!Number.isInteger(days) || days < 1 || days > 90) {
+    throw new Error("Invalid refresh-token configuration");
+  }
 
+  return days;
+};
 
+const createAccessToken = (userId) => {
+  if (!process.env.JWT_ACCESS_SECRET) {
+    throw new Error("JWT access secret is missing");
+  }
+
+  return jwt.sign(
+    { sub: userId.toString() },
+    process.env.JWT_ACCESS_SECRET,
+    { expiresIn: "15m" }
+  );
+};
+
+ const refreshAccessToken = async (req, res, next) => {
+  try {
+    const incomingToken = req.cookies?.refreshToken;
+
+    if (
+      typeof incomingToken !== "string" ||
+      !/^[a-f0-9]{64}$/.test(incomingToken)
+    ) {
+      res.clearCookie("refreshToken", refreshCookieOptions);
+
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token is missing or invalid",
+      });
+    }
+
+    // 1. Hash the incoming token
+    const incomingHash = hashToken(incomingToken);
+
+    // 2. Find a valid, unexpired session
+    const session = await Session.findOne({
+      tokenHash: incomingHash,
+      expiresAt: { $gt: new Date() },
+    });
+
+    if (!session) {
+      res.clearCookie("refreshToken", refreshCookieOptions);
+
+      return res.status(401).json({
+        success: false,
+        message: "Refresh session is invalid or expired",
+      });
+    }
+
+    // 3. Verify that the user still exists
+    const user = await User.findById(session.user);
+
+    if (!user) {
+      await Session.deleteOne({ _id: session._id });
+
+      res.clearCookie("refreshToken", refreshCookieOptions);
+
+      return res.status(401).json({
+        success: false,
+        message: "Authentication failed",
+      });
+    }
+
+    // Add your account-status checks here if applicable.
+
+    // 4. Generate a replacement refresh token
+    const newRefreshToken = generateRefreshToken();
+    const newHash = hashToken(newRefreshToken);
+
+    const refreshDays = getRefreshDays();
+    const expiresAt = new Date(
+      Date.now() + refreshDays * 24 * 60 * 60 * 1000
+    );
+
+    // 5. Atomically replace the old token hash.
+    // Only one concurrent request using the old token can win.
+    const rotation = await Session.updateOne(
+      {
+        _id: session._id,
+        tokenHash: incomingHash,
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        $set: {
+          tokenHash: newHash,
+          expiresAt,
+        },
+      }
+    );
+
+    if (rotation.modifiedCount !== 1) {
+      res.clearCookie("refreshToken", refreshCookieOptions);
+
+      return res.status(401).json({
+        success: false,
+        message: "Refresh token has already been used or revoked",
+      });
+    }
+
+    // 6. Create a fresh access token
+    const accessToken = createAccessToken(user._id);
+
+    // 7. Set the replacement refresh cookie
+    res.cookie("refreshToken", newRefreshToken, {
+      ...refreshCookieOptions,
+      maxAge: refreshDays * 24 * 60 * 60 * 1000,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Access token refreshed",
+      data: {
+        accessToken,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+ const logoutUser = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies?.refreshToken;
+
+    if (typeof refreshToken === "string") {
+      // Hash the refresh token
+      const tokenHash = hashToken(refreshToken);
+
+      // Revoke the corresponding session
+      await Session.deleteOne({ tokenHash });
+    }
+
+    // Clear the browser cookie
+    res.clearCookie("refreshToken", refreshCookieOptions);
+
+    return res.status(200).json({
+      success: true,
+      message: "Logged out successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 
 
@@ -184,4 +335,6 @@ export const loginUser = async (req, res, next) => {
 export{
   registerUser,
   loginUser,
+  refreshAccessToken,
+  logoutUser,
 }
