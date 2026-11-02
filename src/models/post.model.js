@@ -10,14 +10,14 @@ const postSchema = new mongoose.Schema(
       trim: true,
       maxlength: 200,
     },
-
+   
     slug: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      lowercase: true,
-    },
+    type: String,
+    required: true,
+    unique: true,
+    index:true,
+},
+    
 
     content: {
       type: String,
