@@ -22,6 +22,7 @@ import healthcheckRouter from "./routes/healthcheck.route.js"
 import authRouter from "./routes/auth.route.js"
 import postRouter from "./routes/post.route.js"
 import { errorHandler } from "./middlewares/error.middleware.js"
+import commentRouter from "./routes/comment.route.js"
 
 // Routes
 
@@ -29,6 +30,6 @@ import { errorHandler } from "./middlewares/error.middleware.js"
 app.use("/api/v1/healthcheck",healthcheckRouter)
 app.use("/api/v1/auth",authRouter)
 app.use("/api/v1/posts",postRouter)
-
+app.use("/api/v1/comments",commentRouter)
 app.use(errorHandler)
 export {app}

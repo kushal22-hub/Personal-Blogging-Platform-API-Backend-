@@ -34,7 +34,7 @@ const postSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["draft", "published"],
-      default: "draft",
+      default: "published",
     },
 
     tags: {
