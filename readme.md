@@ -32,7 +32,7 @@ A RESTful Blogging Platform API built using **Node.js, Express.js, MongoDB, and 
 1. Clone the repository:
 
    ```bash
-   git clone <your-repository-url>
+   git clone https://github.com/kushal22-hub/Personal-Blogging-Platform-API-Backend-
    ```
 
 2. Navigate to the project directory:
